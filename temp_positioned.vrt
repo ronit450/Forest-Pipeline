@@ -1,0 +1,31 @@
+<VRTDataset rasterXSize="3072" rasterYSize="2600">
+    <VRTRasterBand dataType="Byte" band="1">
+        <NoDataValue>0</NoDataValue>
+        <ColorInterp>Red</ColorInterp>
+        <SimpleSource>
+            <SourceFilename relativeToVRT="0">C:\Users\User\Downloads\1627jpgs\jpgs\silviculture-report-A-35.jpg</SourceFilename>
+            <SourceBand>1</SourceBand>
+            <SourceProperties RasterXSize="3072" RasterYSize="2600" DataType="Byte" BlockXSize="128" BlockYSize="128"/>
+            <SrcRect xOff="0" yOff="0" xSize="3072" ySize="2600"/>
+            <DstRect xOff="0" yOff="0" xSize="3072" ySize="2600"/>
+        </SimpleSource>
+        <SimpleSource>
+            <SourceFilename relativeToVRT="0">C:\Users\User\Downloads\1627_utm_checked\1627_utm_checked\1627_utm\P2_35A_imagesRGB_orthomosaic.tif</SourceFilename>
+            <SourceBand>1</SourceBand>
+            <ScaleOffset>0</ScaleOffset>
+            <ScaleRatio>1</ScaleRatio>
+            <SrcRect xOff="0" yOff="0" xSize="3072" ySize="2600"/>
+            <DstRect xOff="1597" yOff="520" xSize="1382" ySize="1819"/>
+        </SimpleSource>
+    </VRTRasterBand>
+    <VRTRasterBand dataType="Byte" band="2">
+        <NoDataValue>0</NoDataValue>
+        <ColorInterp>Green</ColorInterp>
+        <!-- Similar SimpleSource elements for band 2 -->
+    </VRTRasterBand>
+    <VRTRasterBand dataType="Byte" band="3">
+        <NoDataValue>0</NoDataValue>
+        <ColorInterp>Blue</ColorInterp>
+        <!-- Similar SimpleSource elements for band 3 -->
+    </VRTRasterBand>
+</VRTDataset>

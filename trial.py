@@ -4,55 +4,29 @@ import math
 import numpy as np
 from PIL import Image
 
-def create_georeferenced_logo(input_tiff, logo_path, output_dir, logo_size=(20, 20)):
-    """Create a georeferenced logo overlay"""
-    # Get input TIFF information
-    ds = gdal.Open(input_tiff)
-    gt = ds.GetGeoTransform()
-    proj = ds.GetProjection()
-    width = ds.RasterXSize
-    height = ds.RasterYSize
+
+
+def modify_segments_style(input_dir):
+    """Modify segments shapefile style"""
+    health_colors = {'0': '#E3412B', '1': '#FBAA35', '2': '#30C876', '3': '#1E8C4D'}
     
-    # Calculate position (top-right with padding)
-    padding = 40  # pixels from edge
-    pixel_x = width - padding - logo_size[0]
-    pixel_y = padding
+    segments_shp = os.path.join(input_dir, 'segments.shp')
+    ds = ogr.Open(segments_shp, 1)
+    layer = ds.GetLayer()
     
-    # Convert to georeferenced coordinates
-    geo_x = gt[0] + pixel_x * gt[1]
-    geo_y = gt[3] + pixel_y * gt[5]
+    try:
+        layer.CreateField(ogr.FieldDefn('OGR_STYLE', ogr.OFTString))
+    except:
+        pass
     
-    # Create logo overlay
-    logo = Image.open(logo_path)
-    if logo.mode != 'RGBA':
-        logo = logo.convert('RGBA')
-    logo = logo.resize(logo_size, Image.Resampling.LANCZOS)
+    for feature in layer:
+        class_val = str(feature.GetField('class'))
+        if class_val in health_colors:
+            style_string = f'BRUSH(fc:{health_colors[class_val]});PEN(c:#000000,w:0.1pt)'
+            feature.SetField('OGR_STYLE', style_string)
+            layer.SetFeature(feature)
     
-    # Create new georeferenced raster
-    logo_tiff = os.path.join(output_dir, 'logo_overlay.tif')
-    driver = gdal.GetDriverByName('GTiff')
-    
-    # Create output raster with 4 bands (RGBA)
-    out_ds = driver.Create(logo_tiff, logo_size[0], logo_size[1], 4, gdal.GDT_Byte)
-    
-    # Set the geotransform and projection
-    new_gt = (geo_x, gt[1], gt[2], geo_y, gt[4], gt[5])
-    out_ds.SetGeoTransform(new_gt)
-    out_ds.SetProjection(proj)
-    
-    # Convert PIL image to numpy array and write to bands
-    logo_array = np.array(logo)
-    for i in range(4):  # Write each RGBA band
-        band = out_ds.GetRasterBand(i + 1)
-        band.WriteArray(logo_array[:, :, i])
-    
-    out_ds.FlushCache()
-    out_ds = None
     ds = None
-    
-    return logo_tiff
-    
-    
 
 def modify_segments_style(input_dir):
     """Modify segments shapefile style"""
@@ -245,150 +219,143 @@ def create_line_labels(input_dir):
     lines_ds = None
     out_ds = None
 
-def calculate_page_dimensions(input_tiff):
-    """Calculate dimensions for the output page based on input TIFF"""
+def create_georeferenced_logo(input_tiff, logo_path, output_dir, position=(50, 50), logo_size=(300, 300)):
+    """Create a georeferenced logo overlay with custom positioning
+    
+    Args:
+        input_tiff: Input TIFF file path
+        logo_path: Path to the logo/TIFF to overlay
+        output_dir: Output directory
+        position: (x, y) position from top-left in pixels
+        logo_size: (width, height) size of the overlay
+    """
+    # Get input TIFF information
     ds = gdal.Open(input_tiff)
-    original_width = ds.RasterXSize
-    original_height = ds.RasterYSize
     gt = ds.GetGeoTransform()
     proj = ds.GetProjection()
+    
+    # Use provided position instead of calculating from edges
+    pixel_x = position[0]  # X position from left
+    pixel_y = position[1]  # Y position from top
+    
+    # Convert to georeferenced coordinates
+    geo_x = gt[0] + pixel_x * gt[1]
+    geo_y = gt[3] + pixel_y * gt[5]
+    
+    # Create logo overlay
+    logo = Image.open(logo_path)
+    if logo.mode != 'RGBA':
+        logo = logo.convert('RGBA')
+    logo = logo.resize(logo_size, Image.Resampling.LANCZOS)
+    
+    # Create new georeferenced raster
+    logo_tiff = os.path.join(output_dir, 'logo_overlay.tif')
+    driver = gdal.GetDriverByName('GTiff')
+    
+    # Create output raster with 4 bands (RGBA)
+    out_ds = driver.Create(logo_tiff, logo_size[0], logo_size[1], 4, gdal.GDT_Byte)
+    
+    # Set the geotransform and projection
+    new_gt = (geo_x, gt[1], gt[2], geo_y, gt[4], gt[5])
+    out_ds.SetGeoTransform(new_gt)
+    out_ds.SetProjection(proj)
+    
+    # Convert PIL image to numpy array and write to bands
+    logo_array = np.array(logo)
+    for i in range(4):  # Write each RGBA band
+        band = out_ds.GetRasterBand(i + 1)
+        band.WriteArray(logo_array[:, :, i])
+    
+    out_ds.FlushCache()
+    out_ds = None
     ds = None
     
-    # Make the page width 2x the original
-    page_width = original_width * 2
-    page_height = original_height
-    
-    # Calculate offset to place the content on the right half
-    x_offset = int(original_width * 0.8)  # Position at 80% of original width
-    y_offset = 0  # Keep vertical position the same
-    
-    return {
-        'page_width': page_width,
-        'page_height': page_height,
-        'x_offset': x_offset,
-        'y_offset': y_offset,
-        'original_width': original_width,
-        'original_height': original_height,
-        'geotransform': gt,
-        'projection': proj
-    }
+    return logo_tiff
 
-def create_georef_pdf(input_tiff, input_dir, output_pdf, logo_path=None, logo_size=(20, 20)):
-    """Create georeferenced PDF with all layers and logo on a larger page"""
-    try:
-        # Calculate dimensions
-        dimensions = calculate_page_dimensions(input_tiff)
+def create_georef_pdf(input_tiff, input_dir, output_pdf, logo_path=None, logo_size=(300, 300), logo_position=(50, 50)):
+    """Create georeferenced PDF with all layers and positioned overlay"""
+    # Modify/create all styled layers
+    modify_segments_style(input_dir)
+    modify_lines_style(input_dir)
+    modify_points_style(input_dir)
+    create_well_space_points(input_dir)
+    create_point_labels(input_dir)
+    create_line_labels(input_dir)
+    
+    # Process logo if provided
+    temp_files = []
+    if logo_path and os.path.exists(logo_path):
+        # Create georeferenced logo overlay with custom position
+        logo_tiff = create_georeferenced_logo(
+            input_tiff, 
+            logo_path, 
+            input_dir, 
+            position=logo_position,
+            logo_size=logo_size
+        )
+        temp_files.append(logo_tiff)
         
-        # Modify vector styles (keep existing vector layers)
-        modify_segments_style(input_dir)
-        modify_lines_style(input_dir)
-        modify_points_style(input_dir)
-        create_well_space_points(input_dir)
-        create_point_labels(input_dir)
-        create_line_labels(input_dir)
+        # Merge logo with input TIFF
+        temp_merged = os.path.join(input_dir, 'temp_merged.tif')
+        temp_files.append(temp_merged)
         
-        # Create temporary larger TIFF
-        temp_larger = os.path.join(input_dir, 'temp_larger.tif')
-        if os.path.exists(temp_larger):
-            os.remove(temp_larger)
-            
-        # Open input TIFF
-        src_ds = gdal.Open(input_tiff)
-        gt = src_ds.GetGeoTransform()
+        gdal.Warp(
+            temp_merged, 
+            [logo_tiff, input_tiff],  # Note: logo is the first layer
+            format='GTiff',
+            options=[
+                'COMPRESS=LZW',
+                'ALPHA=YES'
+            ]
+        )
         
-        # Create new geotransform for the larger image
-        # Shift the origin to place content on the right
-        new_gt = list(gt)
-        new_gt[0] = gt[0] + (dimensions['x_offset'] * gt[1])  # Shift X origin
-        
-        # Create larger TIFF
-        driver = gdal.GetDriverByName('GTiff')
-        larger_ds = driver.Create(temp_larger,
-                                dimensions['page_width'],
-                                dimensions['page_height'],
-                                src_ds.RasterCount,
-                                src_ds.GetRasterBand(1).DataType,
-                                options=['COMPRESS=LZW'])
-        
-        # Set spatial reference
-        larger_ds.SetProjection(src_ds.GetProjection())
-        larger_ds.SetGeoTransform(tuple(new_gt))
-        
-        # Fill with white
-        for i in range(1, larger_ds.RasterCount + 1):
-            band = larger_ds.GetRasterBand(i)
-            band.Fill(255)
-        
-        # Copy original data to the right position
-        for i in range(1, src_ds.RasterCount + 1):
-            src_band = src_ds.GetRasterBand(i)
-            dst_band = larger_ds.GetRasterBand(i)
-            data = src_band.ReadAsArray()
-            dst_band.WriteArray(data, dimensions['x_offset'], dimensions['y_offset'])
-        
-        larger_ds.FlushCache()
-        src_ds = None
-        larger_ds = None
-        
-        # Create PDF
-        pdf_options = [
+        input_tiff = temp_merged
+    
+    # Register PDF driver and set up options
+    gdal.GetDriverByName('PDF').Register()
+    
+    translate_options = gdal.TranslateOptions(
+        format="PDF",
+        creationOptions=[
             f"OGR_DATASOURCE={input_dir}",
             "OGR_DISPLAY_FIELD=class",
             "OGR_DISPLAY_LAYER=segments,lines,points,well_space,point_labels,line_labels",
             "LAYER_NAME=Ortho Image",
             "EXTRA_LAYER_NAME=Vector Overlay",
-            "PDF_LAYER_ORDER=ON",
+            "PDF_LAYER_ORDER=OFF",  # Maintain layer hierarchy
             "OGR_PDF_WRITE_INFO=ON",
             "DPI=300",
             "GEO_ENCODING=ISO32000",
             "MARGIN=0",
-            "COMPRESS=JPEG",
-            "JPEG_QUALITY=90"
+            "EXTRA_STREAM=OPACITY:100"
         ]
-        
-        translate_options = gdal.TranslateOptions(
-            format="PDF",
-            creationOptions=pdf_options
-        )
-        
-        print("Creating final PDF...")
-        result = gdal.Translate(output_pdf, temp_larger, options=translate_options)
-        
-        if result is None:
-            raise ValueError("PDF creation failed")
-        
-        result = None
-        
-        # Clean up
-        if os.path.exists(temp_larger):
-            os.remove(temp_larger)
-            
-        print(f"Successfully created PDF: {output_pdf}")
-        
-    except Exception as e:
-        print(f"Error creating PDF: {str(e)}")
-        raise
+    )
+    
+    gdal.Translate(output_pdf, input_tiff, options=translate_options)
+    
+    # Clean up temporary files
+    for temp_file in temp_files:
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
 
 def main():
     input_tiff = r"C:\Users\User\Downloads\1627_utm_checked\1627_utm_checked\1627_utm\P2_35A_imagesRGB_orthomosaic.tif"
     input_directory = r"C:\Users\User\Downloads\1627_utm_checked\1627_utm_checked\Results\vectors"
     output_pdf = "complete_styled_georef.pdf"
-    logo_path = r"C:\Users\User\Downloads\pole.png"
+    logo_path = r"C:\Users\User\Downloads\1627jpgs\jpgs\silviculture-report-A-35.jpg"
     
-    logo_size = (140, 140)
+    # Adjust these values to position your TIFF where you want it
+    logo_size = (3500, 3500)  # Size of the TIFF overlay
+    logo_position = (-1700, -1200)  # Position from top-left corner
     
-    # Ensure input files exist
-    if not os.path.exists(input_tiff):
-        raise FileNotFoundError(f"Input TIFF not found: {input_tiff}")
-    if not os.path.exists(input_directory):
-        raise FileNotFoundError(f"Input directory not found: {input_directory}")
-    
-    create_georef_pdf(input_tiff, input_directory, output_pdf, 
-                     logo_path=logo_path, 
-                     logo_size=logo_size)
+    create_georef_pdf(
+        input_tiff, 
+        input_directory, 
+        output_pdf, 
+        logo_path=logo_path,
+        logo_size=logo_size,
+        logo_position=logo_position
+    )
 
 if __name__ == "__main__":
-    gdal.UseExceptions()
     main()
-
-
